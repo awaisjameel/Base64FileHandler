@@ -4,7 +4,6 @@ namespace AwaisJameel\Base64FileHandler;
 
 use Spatie\LaravelPackageTools\Package;
 use Spatie\LaravelPackageTools\PackageServiceProvider;
-use AwaisJameel\Base64FileHandler\Commands\Base64FileHandlerCommand;
 
 class Base64FileHandlerServiceProvider extends PackageServiceProvider
 {

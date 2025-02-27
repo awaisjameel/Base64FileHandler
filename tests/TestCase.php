@@ -2,9 +2,8 @@
 
 namespace AwaisJameel\Base64FileHandler\Tests;
 
-use Illuminate\Database\Eloquent\Factories\Factory;
-use Orchestra\Testbench\TestCase as Orchestra;
 use AwaisJameel\Base64FileHandler\Base64FileHandlerServiceProvider;
+use Orchestra\Testbench\TestCase as Orchestra;
 
 class TestCase extends Orchestra
 {
