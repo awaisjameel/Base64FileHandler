@@ -1,12 +1,12 @@
 <?php
 
-namespace VendorName\Skeleton\Commands;
+namespace AwaisJameel\Base64FileHandler\Commands;
 
 use Illuminate\Console\Command;
 
-class SkeletonCommand extends Command
+class Base64FileHandlerCommand extends Command
 {
-    public $signature = 'skeleton';
+    public $signature = 'base64filehandler';
 
     public $description = 'My command';
 
