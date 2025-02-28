@@ -2,6 +2,7 @@
 
 namespace AwaisJameel\Base64FileHandler;
 
+use AwaisJameel\MimeTypes\MimeTypes;
 use Exception;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
@@ -163,22 +164,7 @@ class Base64FileHandler
      */
     protected function getExtensionFromMime(string $mime): string
     {
-        $mimeMap = [
-            'image/jpeg' => 'jpg',
-            'image/png' => 'png',
-            'image/gif' => 'gif',
-            'image/webp' => 'webp',
-            'application/pdf' => 'pdf',
-            'text/plain' => 'txt',
-            'text/csv' => 'csv',
-            'application/vnd.ms-excel' => 'xls',
-            'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' => 'xlsx',
-            'application/msword' => 'doc',
-            'application/vnd.openxmlformats-officedocument.wordprocessingml.document' => 'docx',
-            // Add more MIME types as needed
-        ];
-
-        return $mimeMap[$mime] ?? 'bin';
+        return MimeTypes::getExtensionOrMime($mime);
     }
 
     /**
