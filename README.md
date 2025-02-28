@@ -1,83 +1,108 @@
-# A Laravel package for handling and storing base64 encoded files.
+# Base64 File Handler
 
-[![Latest Version on Packagist](https://img.shields.io/packagist/v/awaisjameel/base64filehandler.svg?style=flat-square)](https://packagist.org/packages/awaisjameel/base64filehandler)
-[![GitHub Tests Action Status](https://img.shields.io/github/actions/workflow/status/awaisjameel/base64filehandler/run-tests.yml?branch=main&label=tests&style=flat-square)](https://github.com/awaisjameel/base64filehandler/actions?query=workflow%3Arun-tests+branch%3Amain)
-[![GitHub Code Style Action Status](https://img.shields.io/github/actions/workflow/status/awaisjameel/base64filehandler/fix-php-code-style-issues.yml?branch=main&label=code%20style&style=flat-square)](https://github.com/awaisjameel/base64filehandler/actions?query=workflow%3A"Fix+PHP+code+style+issues"+branch%3Amain)
-[![Total Downloads](https://img.shields.io/packagist/dt/awaisjameel/base64filehandler.svg?style=flat-square)](https://packagist.org/packages/awaisjameel/base64filehandler)
-
-This is where your description should go. Limit it to a paragraph or two. Consider adding a small example.
-
-## Support us
-
-[<img src="https://github-ads.s3.eu-central-1.amazonaws.com/Base64FileHandler.jpg?t=1" width="419px" />](https://spatie.be/github-ad-click/Base64FileHandler)
-
-We invest a lot of resources into creating [best in class open source packages](https://spatie.be/open-source). You can support us by [buying one of our paid products](https://spatie.be/open-source/support-us).
-
-We highly appreciate you sending us a postcard from your hometown, mentioning which of our package(s) you are using. You'll find our address on [our contact page](https://spatie.be/about-us). We publish all received postcards on [our virtual postcard wall](https://spatie.be/open-source/postcards).
+A Laravel package for handling and storing base64 encoded files.
 
 ## Installation
 
 You can install the package via composer:
 
 ```bash
-composer require awaisjameel/base64filehandler
+composer require AwaisJameel/base64-file-handler
 ```
 
-You can publish and run the migrations with:
+The package will automatically register its service provider if you're using Laravel 5.5+.
+
+You can publish the configuration file with:
 
 ```bash
-php artisan vendor:publish --tag="base64filehandler-migrations"
-php artisan migrate
+php artisan vendor:publish --provider="AwaisJameel\Base64FileHandler\Base64FileHandlerServiceProvider" --tag="config"
 ```
 
-You can publish the config file with:
+## Configuration
 
-```bash
-php artisan vendor:publish --tag="base64filehandler-config"
-```
+After publishing the configuration file, you can find it at `config/base64-file-handler.php`. The configuration allows you to set:
 
-This is the contents of the published config file:
-
-```php
-return [
-];
-```
-
-Optionally, you can publish the views using
-
-```bash
-php artisan vendor:publish --tag="base64filehandler-views"
-```
+-   Default storage disk
+-   Default storage path
+-   Allowed file extensions
+-   Valid image extensions
 
 ## Usage
 
+### Basic Usage
+
+You can use the facade to store base64 encoded files:
+
 ```php
-$base64FileHandler = new AwaisJameel\Base64FileHandler();
-echo $base64FileHandler->echoPhrase('Hello, AwaisJameel!');
+use AwaisJameel\Base64FileHandler\Facades\Base64FileHandler;
+
+// Store a base64 encoded file
+$filePath = Base64FileHandler::store($base64Data);
+
+// Store with custom parameters
+$filePath = Base64FileHandler::store(
+    $base64Data,
+    'local',                   // custom disk
+    'custom/path/',            // custom path
+    'original-filename.jpg',   // original filename
+    ['jpg', 'png']             // allowed extensions
+);
 ```
+
+### Validating Images
+
+```php
+use AwaisJameel\Base64FileHandler\Facades\Base64FileHandler;
+
+try {
+    Base64FileHandler::isValidImage($base64Data);
+    // The data is a valid image
+} catch (Exception $e) {
+    // The data is not a valid image
+}
+```
+
+### Getting File Information
+
+```php
+use AwaisJameel\Base64FileHandler\Facades\Base64FileHandler;
+
+$fileInfo = Base64FileHandler::getFileInfo($base64Data);
+// Returns array with mime, extension, size, and decoded data
+```
+
+### Direct Instantiation
+
+You can also use the class directly without the facade:
+
+```php
+use AwaisJameel\Base64FileHandler\Base64FileHandler;
+
+$handler = new Base64FileHandler([
+    'disk' => 'local',
+    'path' => 'custom/path/',
+    'allowed_extensions' => ['jpg', 'png', 'pdf'],
+]);
+
+$filePath = $handler->store($base64Data);
+```
+
+## Error Handling
+
+The package throws exceptions when:
+
+-   The base64 data is invalid
+-   The file extension is not allowed
+-   The image extension is invalid (when validating images)
+-   Unable to store the file
+
+Wrap your code in try-catch blocks to handle these exceptions.
 
 ## Testing
 
 ```bash
 composer test
 ```
-
-## Changelog
-
-Please see [CHANGELOG](CHANGELOG.md) for more information on what has changed recently.
-
-## Contributing
-
-Please see [CONTRIBUTING](CONTRIBUTING.md) for details.
-
-## Security Vulnerabilities
-
-Please review [our security policy](../../security/policy) on how to report security vulnerabilities.
-
-## Credits
-
--   [AwaisJameel](https://github.com/awaisjameel)
--   [All Contributors](../../contributors)
 
 ## License
 
