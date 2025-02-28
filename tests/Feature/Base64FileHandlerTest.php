@@ -10,7 +10,9 @@ use Illuminate\Support\Facades\Storage;
 class Base64FileHandlerTest extends TestCase
 {
     private Base64FileHandler $handler;
+
     private string $validImageBase64;
+
     private string $invalidBase64;
 
     protected function setUp(): void
@@ -19,10 +21,10 @@ class Base64FileHandlerTest extends TestCase
 
         Storage::fake('public');
 
-        $this->handler = new Base64FileHandler();
+        $this->handler = new Base64FileHandler;
 
         // Valid base64 PNG image
-        $this->validImageBase64 = 'data:image/png;base64,' . base64_encode(file_get_contents(__DIR__ . '/../stubs/test-image.png'));
+        $this->validImageBase64 = 'data:image/png;base64,'.base64_encode(file_get_contents(__DIR__.'/../stubs/test-image.png'));
 
         // Invalid base64 string
         $this->invalidBase64 = 'invalid-base64-string';
