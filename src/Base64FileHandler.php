@@ -2,15 +2,20 @@
 
 namespace AwaisJameel\Base64FileHandler;
 
-use AwaisJameel\MimeTypes\MimeTypes;
-use Exception;
+use AwaisJameel\Base64FileHandler\Exceptions\InvalidBase64DataException;
+use AwaisJameel\Base64FileHandler\Exceptions\InvalidImageException;
+use AwaisJameel\Base64FileHandler\Exceptions\UnableToDetermineMimeTypeException;
+use AwaisJameel\Base64FileHandler\Exceptions\UnableToStoreFileException;
+use AwaisJameel\Base64FileHandler\Exceptions\UnsupportedFileExtensionException;
+use AwaisJameel\MimeTypes\Exceptions\UnknownMimeTypeOrExtensionException;
+use AwaisJameel\MimeTypes\Facades\MimeTypes;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 
 class Base64FileHandler
 {
     /**
-     * @var array Default configuration
+     * @var array{disk: string, path: string, allowed_extensions: array<int, string>, valid_image_extensions: array<int, string>}
      */
     protected array $config = [
         'disk' => 'public',
@@ -22,7 +27,7 @@ class Base64FileHandler
     /**
      * Create a new Base64FileHandler instance.
      *
-     * @param  array  $config  Optional custom configuration
+     * @param  array<string, mixed>  $config  Optional custom configuration
      */
     public function __construct(array $config = [])
     {
@@ -35,10 +40,14 @@ class Base64FileHandler
      * @param  string|null  $disk  Override default disk
      * @param  string|null  $path  Override default path
      * @param  string|null  $originalName  Original filename to use
-     * @param  array|null  $allowedExtensions  Override allowed extensions
+     * @param  array<int, string>|null  $allowedExtensions  Override allowed extensions
      * @return string The stored file path
      *
-     * @throws Exception
+     * @throws InvalidBase64DataException
+     * @throws UnableToDetermineMimeTypeException
+     * @throws UnknownMimeTypeOrExtensionException
+     * @throws UnsupportedFileExtensionException
+     * @throws UnableToStoreFileException
      */
     public function store(
         string $base64Data,
@@ -55,11 +64,11 @@ class Base64FileHandler
         $extension = $this->getFileExtension($base64Data);
         $this->validateFileExtension($extension, $allowedExtensions);
 
-        $path = $this->preparePath($path);
-        $fullPath = $this->generateUniqueFilePath($path, $extension, $originalName);
+        $fullPath = $this->generateUniqueFilePath($this->preparePath($path), $extension, $originalName);
 
-        $this->ensureDirectoryExists($disk, $path);
-        $this->storeFile($disk, $fullPath, $file);
+        if (! Storage::disk($disk)->put($fullPath, $file)) {
+            throw UnableToStoreFileException::forPath($disk, $fullPath);
+        }
 
         return $fullPath;
     }
@@ -67,9 +76,12 @@ class Base64FileHandler
     /**
      * Validate if the base64 data represents a valid image.
      *
-     * @param  array|null  $validImageExtensions  Override valid image extensions
+     * @param  array<int, string>|null  $validImageExtensions  Override valid image extensions
      *
-     * @throws Exception
+     * @throws InvalidBase64DataException
+     * @throws UnableToDetermineMimeTypeException
+     * @throws UnknownMimeTypeOrExtensionException
+     * @throws InvalidImageException
      */
     public function isValidImage(
         string $base64Data,
@@ -80,8 +92,8 @@ class Base64FileHandler
         $this->decodeBase64($base64Data);
         $extension = $this->getFileExtension($base64Data);
 
-        if (! in_array($extension, $validExtensions)) {
-            throw new Exception('Invalid image file extension!');
+        if (! in_array(Str::lower($extension), array_map(Str::lower(...), $validExtensions), true)) {
+            throw InvalidImageException::forExtension($extension, $validExtensions);
         }
 
         return true;
@@ -92,7 +104,9 @@ class Base64FileHandler
      *
      * @return array{mime: string, extension: string, size: int, data: string}
      *
-     * @throws Exception
+     * @throws InvalidBase64DataException
+     * @throws UnableToDetermineMimeTypeException
+     * @throws UnknownMimeTypeOrExtensionException
      */
     public function getFileInfo(string $base64Data): array
     {
@@ -111,7 +125,7 @@ class Base64FileHandler
     /**
      * Decode base64 data.
      *
-     * @throws Exception
+     * @throws InvalidBase64DataException
      */
     protected function decodeBase64(string $base64Data): string
     {
@@ -119,7 +133,7 @@ class Base64FileHandler
         $file = base64_decode($filteredBase64Data, true);
 
         if ($file === false) {
-            throw new Exception('Invalid base64 data!');
+            throw InvalidBase64DataException::forData();
         }
 
         return $file;
@@ -128,7 +142,8 @@ class Base64FileHandler
     /**
      * Get MIME type from base64 data.
      *
-     * @throws Exception
+     * @throws InvalidBase64DataException
+     * @throws UnableToDetermineMimeTypeException
      */
     protected function getMimeType(string $base64Data): string
     {
@@ -138,14 +153,18 @@ class Base64FileHandler
             return $matches[1];
         }
 
-        // For data without a MIME prefix, try to detect
+        // For data without a MIME prefix, fall back to sniffing the decoded content.
         $tempFile = tempnam(sys_get_temp_dir(), 'b64');
-        file_put_contents($tempFile, $this->decodeBase64($base64Data));
-        $mime = mime_content_type($tempFile);
-        unlink($tempFile);
+
+        try {
+            file_put_contents($tempFile, $this->decodeBase64($base64Data));
+            $mime = mime_content_type($tempFile);
+        } finally {
+            unlink($tempFile);
+        }
 
         if (! $mime) {
-            throw new Exception('Unable to determine MIME type');
+            throw UnableToDetermineMimeTypeException::forData();
         }
 
         return $mime;
@@ -153,6 +172,8 @@ class Base64FileHandler
 
     /**
      * Get file extension from MIME type.
+     *
+     * @throws UnknownMimeTypeOrExtensionException
      */
     protected function getExtensionFromMime(string $mime): string
     {
@@ -162,7 +183,9 @@ class Base64FileHandler
     /**
      * Get file extension from base64 data.
      *
-     * @throws Exception
+     * @throws InvalidBase64DataException
+     * @throws UnableToDetermineMimeTypeException
+     * @throws UnknownMimeTypeOrExtensionException
      */
     protected function getFileExtension(string $base64Data): string
     {
@@ -174,12 +197,18 @@ class Base64FileHandler
     /**
      * Validate file extension against allowed list.
      *
-     * @throws Exception
+     * @param  array<int, string>  $allowedExtensions
+     *
+     * @throws UnsupportedFileExtensionException
      */
     protected function validateFileExtension(string $extension, array $allowedExtensions): void
     {
-        if (! empty($allowedExtensions) && ! in_array($extension, $allowedExtensions)) {
-            throw new Exception('File extension not allowed!');
+        if ($allowedExtensions === []) {
+            return;
+        }
+
+        if (! in_array(Str::lower($extension), array_map(Str::lower(...), $allowedExtensions), true)) {
+            throw UnsupportedFileExtensionException::forExtension($extension, $allowedExtensions);
         }
     }
 
@@ -192,38 +221,14 @@ class Base64FileHandler
     }
 
     /**
-     * Generate unique file path.
+     * Generate a unique file path, safe from collisions even under concurrent requests.
      */
     protected function generateUniqueFilePath(string $path, string $extension, ?string $originalName): string
     {
-        $fileName = $originalName
-            ? Str::slug(pathinfo($originalName, PATHINFO_FILENAME))
-            : (string) Str::uuid();
+        $fileName = $originalName ? Str::slug(pathinfo($originalName, PATHINFO_FILENAME)) : '';
 
-        return $path.$fileName.'_'.time().'.'.$extension;
-    }
+        $uniqueSuffix = (string) Str::ulid();
 
-    /**
-     * Ensure directory exists.
-     */
-    protected function ensureDirectoryExists(string $disk, string $path): void
-    {
-        if (! Storage::disk($disk)->exists($path)) {
-            Storage::disk($disk)->makeDirectory($path);
-        }
-    }
-
-    /**
-     * Store file to disk.
-     *
-     * @throws Exception
-     */
-    protected function storeFile(string $disk, string $fullPath, string $file): void
-    {
-        $stored = Storage::disk($disk)->put($fullPath, $file);
-
-        if (! $stored) {
-            throw new Exception('Unable to store file to the path');
-        }
+        return $path.($fileName !== '' ? $fileName.'_'.$uniqueSuffix : $uniqueSuffix).'.'.$extension;
     }
 }

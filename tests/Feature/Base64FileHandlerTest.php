@@ -3,8 +3,11 @@
 namespace AwaisJameel\Base64FileHandler\Tests\Feature;
 
 use AwaisJameel\Base64FileHandler\Base64FileHandler;
+use AwaisJameel\Base64FileHandler\Exceptions\InvalidBase64DataException;
+use AwaisJameel\Base64FileHandler\Exceptions\InvalidImageException;
+use AwaisJameel\Base64FileHandler\Exceptions\UnsupportedFileExtensionException;
+use AwaisJameel\Base64FileHandler\Facades\Base64FileHandler as Base64FileHandlerFacade;
 use AwaisJameel\Base64FileHandler\Tests\TestCase;
-use Exception;
 use Illuminate\Support\Facades\Storage;
 
 class Base64FileHandlerTest extends TestCase
@@ -40,7 +43,7 @@ class Base64FileHandlerTest extends TestCase
 
     public function test_throws_exception_for_invalid_base64()
     {
-        $this->expectException(Exception::class);
+        $this->expectException(InvalidBase64DataException::class);
         $this->handler->store($this->invalidBase64);
     }
 
@@ -51,8 +54,14 @@ class Base64FileHandlerTest extends TestCase
 
     public function test_throws_exception_for_invalid_image()
     {
-        $this->expectException(Exception::class);
+        $this->expectException(InvalidBase64DataException::class);
         $this->handler->isValidImage($this->invalidBase64);
+    }
+
+    public function test_throws_exception_for_disallowed_image_extension()
+    {
+        $this->expectException(InvalidImageException::class);
+        $this->handler->isValidImage($this->validImageBase64, ['pdf']);
     }
 
     public function test_can_get_file_info()
@@ -84,7 +93,7 @@ class Base64FileHandlerTest extends TestCase
 
     public function test_respects_allowed_extensions()
     {
-        $this->expectException(Exception::class);
+        $this->expectException(UnsupportedFileExtensionException::class);
 
         $this->handler->store(
             $this->validImageBase64,
@@ -95,11 +104,55 @@ class Base64FileHandlerTest extends TestCase
         );
     }
 
+    public function test_allowed_extensions_are_matched_case_insensitively()
+    {
+        $filePath = $this->handler->store(
+            $this->validImageBase64,
+            null,
+            null,
+            null,
+            ['PNG']
+        );
+
+        Storage::disk('public')->assertExists($filePath);
+    }
+
     public function test_uses_original_filename()
     {
         $originalName = 'test-image.png';
         $filePath = $this->handler->store($this->validImageBase64, null, null, $originalName);
 
         $this->assertStringContainsString('test-image', $filePath);
+    }
+
+    public function test_generates_unique_paths_for_repeated_uploads_of_the_same_name()
+    {
+        $originalName = 'test-image.png';
+
+        $firstPath = $this->handler->store($this->validImageBase64, null, null, $originalName);
+        $secondPath = $this->handler->store($this->validImageBase64, null, null, $originalName);
+
+        $this->assertNotSame($firstPath, $secondPath);
+        Storage::disk('public')->assertExists($firstPath);
+        Storage::disk('public')->assertExists($secondPath);
+    }
+
+    public function test_container_resolution_honours_published_configuration()
+    {
+        Storage::fake('config-disk');
+        config()->set('base64filehandler.disk', 'config-disk');
+
+        $filePath = Base64FileHandlerFacade::store($this->validImageBase64);
+
+        Storage::disk('config-disk')->assertExists($filePath);
+    }
+
+    public function test_container_resolution_honours_configured_allowed_extensions()
+    {
+        config()->set('base64filehandler.allowed_extensions', ['pdf']);
+
+        $this->expectException(UnsupportedFileExtensionException::class);
+
+        Base64FileHandlerFacade::store($this->validImageBase64);
     }
 }

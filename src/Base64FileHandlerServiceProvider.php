@@ -18,4 +18,12 @@ class Base64FileHandlerServiceProvider extends PackageServiceProvider
             ->name('base64filehandler')
             ->hasConfigFile();
     }
+
+    public function packageRegistered(): void
+    {
+        $this->app->singleton(
+            Base64FileHandler::class,
+            fn ($app) => new Base64FileHandler((array) $app['config']->get('base64filehandler', []))
+        );
+    }
 }
