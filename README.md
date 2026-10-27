@@ -2,7 +2,6 @@
 
 [![Latest Version on Packagist](https://img.shields.io/packagist/v/awaisjameel/base64filehandler.svg?style=flat-square)](https://packagist.org/packages/awaisjameel/base64filehandler)
 [![GitHub Tests Action Status](https://img.shields.io/github/actions/workflow/status/awaisjameel/base64filehandler/run-tests.yml?branch=main&label=tests&style=flat-square)](https://github.com/awaisjameel/base64filehandler/actions?query=workflow%3Arun-tests+branch%3Amain)
-[![GitHub Code Style Action Status](https://img.shields.io/github/actions/workflow/status/awaisjameel/base64filehandler/fix-php-code-style-issues.yml?branch=main&label=code%20style&style=flat-square)](https://github.com/awaisjameel/base64filehandler/actions?query=workflow%3A"Fix+PHP+code+style+issues"+branch%3Amain)
 [![Total Downloads](https://img.shields.io/packagist/dt/awaisjameel/base64filehandler.svg?style=flat-square)](https://packagist.org/packages/awaisjameel/base64filehandler)
 
 **Base64FileHandler** decodes `data:` URI / raw base64 payloads — the kind you get from a JS canvas export, a signature pad, or a mobile app's JSON upload — validates them, and stores them on any Laravel filesystem disk. It resolves MIME types and extensions using [`awaisjameel/mimetypes`](https://github.com/awaisjameel/mimetypes), so file-type detection stays accurate without a hardcoded, ever-stale lookup table baked into this package.
@@ -21,7 +20,25 @@
 
 | Base64FileHandler | PHP  | Laravel                    |
 |--------------------|------|-----------------------------|
-| ^2.0               | ^8.2 | ^10.0, ^11.0, ^12.0, ^13.0  |
+| ^3.0               | ^8.2 | ^12.0, ^13.0               |
+
+The `fileinfo` PHP extension is required. Laravel 12 supports PHP 8.2–8.5;
+Laravel 13 requires PHP 8.3–8.5. Development installs use the latest compatible
+Pest version (3 on PHP 8.2, 4 on PHP 8.3 or Laravel 12, and 5 on PHP 8.4–8.5
+with Laravel 13).
+
+## Upgrading from 2.x
+
+Version 3 drops Laravel 10 and 11. MIME types are now detected from the decoded
+bytes for every upload. A data URI declaring a different type throws
+`MimeTypeMismatchException` before storage or image validation. Correct mislabeled
+uploads at their source; raw base64 remains supported. Data URI metadata is matched
+case-insensitively, and parameters such as `charset=UTF-8` are accepted.
+
+`isValidImage()` requires an image MIME type and recognizable image dimensions in
+addition to the configured extension list. It inspects image metadata; it does not
+fully decode pixels or sanitize image content. Storage failures return the package's
+`UnableToStoreFileException`, preserving any underlying filesystem exception.
 
 ## Installation
 
@@ -102,7 +119,7 @@ $path = Base64FileHandler::store(
 );
 ```
 
-`$base64Data` may be a full data URI (`data:image/png;base64,...`) or a raw base64 string with no prefix — the MIME type is detected either way. The returned `$path` is the file's path on the given disk (suitable for `Storage::disk($disk)->url($path)`, `->get($path)`, etc.).
+`$base64Data` may be a full data URI (`data:image/png;base64,...`) or a raw base64 string with no prefix. The MIME type is detected from the decoded bytes, and a supplied MIME label must match it. The returned `$path` is the file's path on the given disk (suitable for `Storage::disk($disk)->url($path)`, `->get($path)`, etc.).
 
 If `originalName` is given, its slugified filename is used as a prefix so stored paths stay readable; a unique suffix is always appended so concurrent uploads — even of the same original filename — never collide or overwrite one another.
 
@@ -111,11 +128,12 @@ If `originalName` is given, its slugified filename is used as a prefix so stored
 ```php
 use AwaisJameel\Base64FileHandler\Facades\Base64FileHandler;
 use AwaisJameel\Base64FileHandler\Exceptions\InvalidImageException;
+use AwaisJameel\Base64FileHandler\Exceptions\MimeTypeMismatchException;
 
 try {
     Base64FileHandler::isValidImage($base64Data);
     // The data decodes to one of the configured valid image extensions.
-} catch (InvalidImageException $e) {
+} catch (InvalidImageException | MimeTypeMismatchException $e) {
     // Not a valid image.
 }
 
@@ -145,9 +163,10 @@ Every method throws a specific exception for each failure mode instead of a gene
 | Exception | Thrown when |
 |---|---|
 | `AwaisJameel\Base64FileHandler\Exceptions\InvalidBase64DataException` | The given string isn't valid base64 data. |
-| `AwaisJameel\Base64FileHandler\Exceptions\UnableToDetermineMimeTypeException` | No `data:` MIME prefix was given and the decoded content's MIME type couldn't be sniffed. |
+| `AwaisJameel\Base64FileHandler\Exceptions\UnableToDetermineMimeTypeException` | The decoded content's MIME type couldn't be detected. |
+| `AwaisJameel\Base64FileHandler\Exceptions\MimeTypeMismatchException` | The data URI's MIME label conflicts with the decoded content. |
 | `AwaisJameel\Base64FileHandler\Exceptions\UnsupportedFileExtensionException` | The resolved file extension isn't in the allowed extensions list (`store()` only). |
-| `AwaisJameel\Base64FileHandler\Exceptions\InvalidImageException` | The resolved file extension isn't in the valid image extensions list (`isValidImage()` only). |
+| `AwaisJameel\Base64FileHandler\Exceptions\InvalidImageException` | The extension is disallowed or the decoded content lacks an image MIME type and recognizable dimensions (`isValidImage()` only). |
 | `AwaisJameel\Base64FileHandler\Exceptions\UnableToStoreFileException` | The filesystem disk rejected the write (`store()` only). |
 
 All of the above extend the package's base `AwaisJameel\Base64FileHandler\Exceptions\Base64FileHandlerException`, so you can catch everything this package itself throws in one place:
@@ -228,12 +247,12 @@ Please see [CONTRIBUTING](CONTRIBUTING.md) for details.
 
 ## Security Vulnerabilities
 
-Please review [our security policy](../../security/policy) on how to report security vulnerabilities.
+Please review [our security policy](https://github.com/awaisjameel/base64filehandler/security/policy) on how to report security vulnerabilities.
 
 ## Credits
 
 - [Awais Jameel](https://github.com/awaisjameel)
-- [All Contributors](../../contributors)
+- [All Contributors](https://github.com/awaisjameel/base64filehandler/graphs/contributors)
 
 ## License
 

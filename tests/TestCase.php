@@ -16,7 +16,9 @@ class TestCase extends Orchestra
         // Force awaisjameel/mimetypes to resolve from its bundled offline
         // snapshot instead of making a real HTTP request to the Apache
         // mime.types source on every test run.
+        Http::preventStrayRequests();
         Http::fake(['*' => Http::response('', 500)]);
+        config()->set('mimetypes.http.retry.times', 1);
     }
 
     protected function getPackageProviders($app)
@@ -29,6 +31,6 @@ class TestCase extends Orchestra
 
     public function getEnvironmentSetUp($app)
     {
-        config()->set('database.default', 'testing');
+        $app['config']->set('cache.default', 'array');
     }
 }

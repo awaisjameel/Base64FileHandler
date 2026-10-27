@@ -4,6 +4,7 @@ namespace AwaisJameel\Base64FileHandler;
 
 use AwaisJameel\Base64FileHandler\Exceptions\InvalidBase64DataException;
 use AwaisJameel\Base64FileHandler\Exceptions\InvalidImageException;
+use AwaisJameel\Base64FileHandler\Exceptions\MimeTypeMismatchException;
 use AwaisJameel\Base64FileHandler\Exceptions\UnableToDetermineMimeTypeException;
 use AwaisJameel\Base64FileHandler\Exceptions\UnableToStoreFileException;
 use AwaisJameel\Base64FileHandler\Exceptions\UnsupportedFileExtensionException;
@@ -11,6 +12,7 @@ use AwaisJameel\MimeTypes\Exceptions\UnknownMimeTypeOrExtensionException;
 use AwaisJameel\MimeTypes\Facades\MimeTypes;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
+use League\Flysystem\FilesystemException;
 
 class Base64FileHandler
 {
@@ -27,7 +29,7 @@ class Base64FileHandler
     /**
      * Create a new Base64FileHandler instance.
      *
-     * @param  array<string, mixed>  $config  Optional custom configuration
+     * @param  array{disk?: string, path?: string, allowed_extensions?: array<int, string>, valid_image_extensions?: array<int, string>}  $config  Optional custom configuration
      */
     public function __construct(array $config = [])
     {
@@ -44,6 +46,7 @@ class Base64FileHandler
      * @return string The stored file path
      *
      * @throws InvalidBase64DataException
+     * @throws MimeTypeMismatchException
      * @throws UnableToDetermineMimeTypeException
      * @throws UnknownMimeTypeOrExtensionException
      * @throws UnsupportedFileExtensionException
@@ -60,13 +63,19 @@ class Base64FileHandler
         $path = $path ?? $this->config['path'];
         $allowedExtensions = $allowedExtensions ?? $this->config['allowed_extensions'];
 
-        $file = $this->decodeBase64($base64Data);
-        $extension = $this->getFileExtension($base64Data);
+        $info = $this->getFileInfo($base64Data);
+        $extension = $info['extension'];
         $this->validateFileExtension($extension, $allowedExtensions);
 
         $fullPath = $this->generateUniqueFilePath($this->preparePath($path), $extension, $originalName);
 
-        if (! Storage::disk($disk)->put($fullPath, $file)) {
+        try {
+            $stored = Storage::disk($disk)->put($fullPath, $info['data']);
+        } catch (FilesystemException $exception) {
+            throw UnableToStoreFileException::forPath($disk, $fullPath, $exception);
+        }
+
+        if (! $stored) {
             throw UnableToStoreFileException::forPath($disk, $fullPath);
         }
 
@@ -79,6 +88,7 @@ class Base64FileHandler
      * @param  array<int, string>|null  $validImageExtensions  Override valid image extensions
      *
      * @throws InvalidBase64DataException
+     * @throws MimeTypeMismatchException
      * @throws UnableToDetermineMimeTypeException
      * @throws UnknownMimeTypeOrExtensionException
      * @throws InvalidImageException
@@ -89,11 +99,15 @@ class Base64FileHandler
     ): bool {
         $validExtensions = $validImageExtensions ?? $this->config['valid_image_extensions'];
 
-        $this->decodeBase64($base64Data);
-        $extension = $this->getFileExtension($base64Data);
+        $info = $this->getFileInfo($base64Data);
+        $extension = $info['extension'];
 
         if (! in_array(Str::lower($extension), array_map(Str::lower(...), $validExtensions), true)) {
             throw InvalidImageException::forExtension($extension, $validExtensions);
+        }
+
+        if (! str_starts_with($info['mime'], 'image/') || @getimagesizefromstring($info['data']) === false) {
+            throw InvalidImageException::forData();
         }
 
         return true;
@@ -105,13 +119,14 @@ class Base64FileHandler
      * @return array{mime: string, extension: string, size: int, data: string}
      *
      * @throws InvalidBase64DataException
+     * @throws MimeTypeMismatchException
      * @throws UnableToDetermineMimeTypeException
      * @throws UnknownMimeTypeOrExtensionException
      */
     public function getFileInfo(string $base64Data): array
     {
         $decodedData = $this->decodeBase64($base64Data);
-        $mime = $this->getMimeType($base64Data);
+        $mime = $this->getMimeType($base64Data, $decodedData);
         $extension = $this->getExtensionFromMime($mime);
 
         return [
@@ -129,8 +144,7 @@ class Base64FileHandler
      */
     protected function decodeBase64(string $base64Data): string
     {
-        $filteredBase64Data = preg_replace('#^data:([^;]+);base64,#', '', $base64Data);
-        $file = base64_decode($filteredBase64Data, true);
+        $file = base64_decode($this->parseDataUri($base64Data)['payload'], true);
 
         if ($file === false) {
             throw InvalidBase64DataException::forData();
@@ -143,31 +157,40 @@ class Base64FileHandler
      * Get MIME type from base64 data.
      *
      * @throws InvalidBase64DataException
+     * @throws MimeTypeMismatchException
      * @throws UnableToDetermineMimeTypeException
      */
-    protected function getMimeType(string $base64Data): string
+    protected function getMimeType(string $base64Data, ?string $decodedData = null): string
     {
-        preg_match('#^data:([^;]+);base64,#', $base64Data, $matches);
-
-        if (isset($matches[1])) {
-            return $matches[1];
-        }
-
-        // For data without a MIME prefix, fall back to sniffing the decoded content.
-        $tempFile = tempnam(sys_get_temp_dir(), 'b64');
-
-        try {
-            file_put_contents($tempFile, $this->decodeBase64($base64Data));
-            $mime = mime_content_type($tempFile);
-        } finally {
-            unlink($tempFile);
-        }
+        $mime = (new \finfo(FILEINFO_MIME_TYPE))->buffer($decodedData ?? $this->decodeBase64($base64Data));
 
         if (! $mime) {
             throw UnableToDetermineMimeTypeException::forData();
         }
 
+        $declaredMime = $this->parseDataUri($base64Data)['mime'];
+
+        if ($declaredMime !== null && $declaredMime !== $mime) {
+            throw MimeTypeMismatchException::forTypes($declaredMime, $mime);
+        }
+
         return $mime;
+    }
+
+    /**
+     * @return array{mime: ?string, payload: string}
+     */
+    protected function parseDataUri(string $base64Data): array
+    {
+        if (strncasecmp($base64Data, 'data:', 5) !== 0) {
+            return ['mime' => null, 'payload' => $base64Data];
+        }
+
+        if (preg_match('/\Adata:([^;,]+)(?:;[^,;]+)*;base64,(.*)\z/is', $base64Data, $matches) !== 1) {
+            throw InvalidBase64DataException::forData();
+        }
+
+        return ['mime' => strtolower($matches[1]), 'payload' => $matches[2]];
     }
 
     /**
@@ -178,20 +201,6 @@ class Base64FileHandler
     protected function getExtensionFromMime(string $mime): string
     {
         return MimeTypes::getExtensionOrMime($mime);
-    }
-
-    /**
-     * Get file extension from base64 data.
-     *
-     * @throws InvalidBase64DataException
-     * @throws UnableToDetermineMimeTypeException
-     * @throws UnknownMimeTypeOrExtensionException
-     */
-    protected function getFileExtension(string $base64Data): string
-    {
-        $mime = $this->getMimeType($base64Data);
-
-        return $this->getExtensionFromMime($mime);
     }
 
     /**

@@ -6,6 +6,11 @@ namespace AwaisJameel\Base64FileHandler\Exceptions;
 
 class InvalidImageException extends Base64FileHandlerException
 {
+    public static function forData(): self
+    {
+        return new self('The decoded data does not contain a recognizable image.');
+    }
+
     /**
      * @param  array<int, string>  $validImageExtensions
      */
