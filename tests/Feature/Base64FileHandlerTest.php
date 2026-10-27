@@ -5,10 +5,14 @@ namespace AwaisJameel\Base64FileHandler\Tests\Feature;
 use AwaisJameel\Base64FileHandler\Base64FileHandler;
 use AwaisJameel\Base64FileHandler\Exceptions\InvalidBase64DataException;
 use AwaisJameel\Base64FileHandler\Exceptions\InvalidImageException;
+use AwaisJameel\Base64FileHandler\Exceptions\MimeTypeMismatchException;
+use AwaisJameel\Base64FileHandler\Exceptions\UnableToStoreFileException;
 use AwaisJameel\Base64FileHandler\Exceptions\UnsupportedFileExtensionException;
 use AwaisJameel\Base64FileHandler\Facades\Base64FileHandler as Base64FileHandlerFacade;
 use AwaisJameel\Base64FileHandler\Tests\TestCase;
+use Illuminate\Filesystem\FilesystemAdapter;
 use Illuminate\Support\Facades\Storage;
+use League\Flysystem\UnableToWriteFile;
 
 class Base64FileHandlerTest extends TestCase
 {
@@ -27,7 +31,7 @@ class Base64FileHandlerTest extends TestCase
         $this->handler = new Base64FileHandler;
 
         // Valid base64 PNG image
-        $this->validImageBase64 = 'data:image/png;base64,'.base64_encode(file_get_contents(__DIR__.'/../stubs/test-image.png'));
+        $this->validImageBase64 = 'data:image/png;base64,'.base64_encode(file_get_contents(__DIR__.'/../Stubs/test-image.png'));
 
         // Invalid base64 string
         $this->invalidBase64 = 'invalid-base64-string';
@@ -154,5 +158,97 @@ class Base64FileHandlerTest extends TestCase
         $this->expectException(UnsupportedFileExtensionException::class);
 
         Base64FileHandlerFacade::store($this->validImageBase64);
+    }
+
+    public function test_inspects_and_stores_raw_base64_without_a_mime_prefix(): void
+    {
+        $raw = explode(',', $this->validImageBase64, 2)[1];
+        $info = $this->handler->getFileInfo($raw);
+        $path = $this->handler->store($raw);
+
+        $this->assertSame('image/png', $info['mime']);
+        $this->assertSame(base64_decode($raw, true), $info['data']);
+        $this->assertSame(strlen($info['data']), $info['size']);
+        $this->assertSame($info['data'], Storage::disk('public')->get($path));
+        $this->assertTrue($this->handler->isValidImage($raw));
+    }
+
+    public function test_rejects_a_spoofed_mime_label_without_writing_a_file(): void
+    {
+        try {
+            $this->handler->store('data:image/png;base64,'.base64_encode('This is a plain text document.'));
+            $this->fail('Expected a MIME mismatch.');
+        } catch (MimeTypeMismatchException $exception) {
+            $this->assertStringContainsString('text/plain', $exception->getMessage());
+        }
+
+        $this->assertSame([], Storage::disk('public')->allFiles());
+    }
+
+    public function test_image_validation_rejects_a_spoofed_mime_label(): void
+    {
+        $this->expectException(MimeTypeMismatchException::class);
+
+        $this->handler->isValidImage('data:image/png;base64,'.base64_encode('This is plain text.'));
+    }
+
+    public function test_inspection_rejects_a_conflicting_label_on_a_real_image(): void
+    {
+        $this->expectException(MimeTypeMismatchException::class);
+
+        $this->handler->getFileInfo(str_replace('image/png', 'image/jpeg', $this->validImageBase64));
+    }
+
+    public function test_accepts_case_insensitive_data_uri_metadata(): void
+    {
+        $uri = str_replace(['data:', 'image/png', ';base64,'], ['DATA:', 'IMAGE/PNG', ';BASE64,'], $this->validImageBase64);
+
+        $this->assertSame('image/png', $this->handler->getFileInfo($uri)['mime']);
+    }
+
+    public function test_accepts_data_uri_parameters(): void
+    {
+        $uri = 'data:text/plain;charset=UTF-8;base64,'.base64_encode('This is plain text.');
+
+        $this->assertSame('text/plain', $this->handler->getFileInfo($uri)['mime']);
+    }
+
+    public function test_rejects_a_malformed_data_uri(): void
+    {
+        $this->expectException(InvalidBase64DataException::class);
+
+        $this->handler->getFileInfo('data:image/png,not-base64');
+    }
+
+    public function test_a_non_image_cannot_be_accepted_by_a_custom_image_extension_list(): void
+    {
+        $this->expectException(InvalidImageException::class);
+
+        $this->handler->isValidImage(base64_encode('This is plain text.'), ['txt']);
+    }
+
+    public function test_converts_a_rejected_storage_write_to_a_package_exception(): void
+    {
+        $disk = \Mockery::mock(FilesystemAdapter::class);
+        $disk->shouldReceive('put')->once()->andReturn(false);
+        Storage::shouldReceive('disk')->with('public')->once()->andReturn($disk);
+        $this->expectException(UnableToStoreFileException::class);
+
+        $this->handler->store($this->validImageBase64);
+    }
+
+    public function test_preserves_the_cause_of_a_thrown_storage_failure(): void
+    {
+        $cause = UnableToWriteFile::atLocation('uploads/image.png', 'Read-only disk');
+        $disk = \Mockery::mock(FilesystemAdapter::class);
+        $disk->shouldReceive('put')->once()->andThrow($cause);
+        Storage::shouldReceive('disk')->with('public')->once()->andReturn($disk);
+
+        try {
+            $this->handler->store($this->validImageBase64);
+            $this->fail('Expected a storage exception.');
+        } catch (UnableToStoreFileException $exception) {
+            $this->assertSame($cause, $exception->getPrevious());
+        }
     }
 }

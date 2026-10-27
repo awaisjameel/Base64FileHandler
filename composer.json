@@ -17,32 +17,29 @@
     ],
     "require": {
         "php": "^8.2",
-        "awaisjameel/mimetypes": "^2.0",
-        "spatie/laravel-package-tools": "^1.16",
-        "illuminate/contracts": "^10.0||^11.0||^12.0||^13.0"
+        "ext-fileinfo": "*",
+        "awaisjameel/mimetypes": "^2.0||^3.0",
+        "illuminate/filesystem": "^12.0||^13.0",
+        "illuminate/support": "^12.0||^13.0",
+        "league/flysystem": "^3.36.0",
+        "spatie/laravel-package-tools": "^1.93.3"
     },
     "require-dev": {
         "laravel/pint": "^1.14",
-        "nunomaduro/collision": "^8.1.1||^7.10.0",
-        "larastan/larastan": "^2.9||^3.0",
-        "orchestra/testbench": "^11.0||^10.0||^9.0||^8.22.0",
-        "pestphp/pest": "^3.0",
-        "pestphp/pest-plugin-arch": "^3.0",
-        "pestphp/pest-plugin-laravel": "^3.0",
-        "phpstan/extension-installer": "^1.3||^2.0",
-        "phpstan/phpstan-deprecation-rules": "^1.1||^2.0",
-        "phpstan/phpstan-phpunit": "^1.3||^2.0"
+        "larastan/larastan": "^3.13.2",
+        "orchestra/testbench": "^10.12||^11.3",
+        "pestphp/pest": "^3.0||^4.7.8||^5.3.3",
+        "phpstan/extension-installer": "^1.4.3",
+        "phpstan/phpstan-deprecation-rules": "^2.0.5"
     },
     "autoload": {
         "psr-4": {
-            "AwaisJameel\\Base64FileHandler\\": "src/",
-            "AwaisJameel\\Base64FileHandler\\Database\\Factories\\": "database/factories/"
+            "AwaisJameel\\Base64FileHandler\\": "src/"
         }
     },
     "autoload-dev": {
         "psr-4": {
-            "AwaisJameel\\Base64FileHandler\\Tests\\": "tests/",
-            "Workbench\\App\\": "workbench/app/"
+            "AwaisJameel\\Base64FileHandler\\Tests\\": "tests/"
         }
     },
     "scripts": {
